@@ -1,0 +1,12 @@
+venv/
+.env
+service-account.json
+oauth_client.json
+token.json
+ngrok.exe
+uploads/*.jpg
+uploads/*.png
+bot.db
+__pycache__/
+*.pyc
+requirements2.txt
