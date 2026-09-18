@@ -4,9 +4,10 @@ service-account.json
 oauth_client.json
 token.json
 ngrok.exe
-uploads/*.jpg
-uploads/*.png
+uploads/
+upload_videos/
 bot.db
+*.log
 __pycache__/
 *.pyc
 requirements2.txt
