@@ -201,4 +201,72 @@ This bot is used by Bloom to automate intake of files sent over WhatsApp — ins
 
 ---
 
-*Sections still to add: Usage, Project structure, Known limitations, Roadmap, Contributors.*
+## Usage
+
+Once the server and ngrok are both running, and the Meta webhook is configured with your ngrok forwarding URL:
+
+1. Send an image or video to your WhatsApp test number (the one from the Meta dashboard).
+2. The bot receives it via the webhook and processes it in the background.
+3. **The bot does not currently send a reply back on WhatsApp** — status messages (`uploaded`, `Already processed this one`, `Upload failed, we'll retry shortly.`) are only printed to the console/terminal where the app is running, not sent to the sender.
+4. Check the relevant Google Drive folder (image or video) — the uploaded file will appear there, named by its content hash.
+5. If a per-sender folder was created, the file will be inside a subfolder named after the sender's phone number.
+6. To confirm status internally, check the SQLite database — each file's entry shows whether it was `saved`, `uploaded`, or flagged as `duplicate_content`.
+
+---
+
+## Project Structure
+
+```
+whatsapp-drive-bot/
+├── app/
+│   ├── main.py     # Entry point — runs the FastAPI app. Contains the health check,
+│   │                 the webhook verification endpoint (confirms Meta's identity),
+│   │                 and the endpoint that receives incoming content from Meta and
+│   │                 triggers the pipeline
+│   ├── db.py       # Writes and updates file status in the SQLite database
+│   ├── dedup.py    # Handles communication with Redis (Upstash) — checks whether a
+│   │                 file was already downloaded/uploaded, and marks it as such
+│   ├── drive.py    # Creates or retrieves a sender's folder in Drive (if one already
+│   │                 exists), and uploads a file (image or video) into it
+│   └── whatsapp.py # Resolves a media ID to a media URL, downloads the media, and
+│                     sends text messages
+├── uploads/        # Downloaded images (created automatically on startup)
+├── upload_videos/  # Downloaded videos (created automatically on startup)
+├── requirements.txt
+├── .env            # Credentials (not committed to git)
+├── app.log         # Runtime error log
+└── README.md
+```
+
+**Pipeline summary:**
+1. Meta sends a `GET` request to verify the webhook
+2. On an incoming message, check if it's video, image, or text
+3. If video/image → get its media ID → request the media URL → download it
+4. While downloading, compute the file's SHA-256 hash
+5. Check if this hash was already **downloaded** before:
+   - If yes → delete the just-downloaded duplicate
+   - If no → keep it
+6. Check if this hash was already **uploaded** before:
+   - If yes → do nothing further
+   - If no → call the upload function (image or video) to push it to Drive
+
+---
+
+## Known Limitations
+
+- **WhatsApp access token expires quickly** and needs to be regenerated frequently from the Meta dashboard, then updated in `.env`. If it expires and isn't refreshed, incoming files fail with:
+  ```
+  Could not resolve media URL
+  ```
+- **Intermittent timeout errors on some files** — occasionally, a file fails with:
+  ```
+  The read operation timed out
+  ```
+  The exact cause isn't currently known. When this happens, the file isn't downloaded/uploaded, and — since there's no reply sent back to the sender — there's currently no reliable way to know which specific video or image failed without manually checking the logs or the SQLite database.
+- **No WhatsApp reply sent to the user** — status messages are currently only printed to the console, not sent back through the WhatsApp API. This compounds the timeout issue above, since a failed upload gives the sender no visible feedback at all.
+- **Depends on a running laptop** — the app and ngrok both need to stay running locally; if the machine shuts down or sleeps, the bot stops receiving messages
+- **Dedup records expire after 7 days** — if the same file is resent after that window, it could be re-downloaded and re-uploaded as if new
+- **No multi-agent support yet** — the bot currently only sends automated replies; routing to human agents is a planned but unbuilt phase (would require a BSP)
+- **Not yet deployed to a permanent server** — currently runs locally via ngrok, which is explicitly a development-only setup
+
+---
